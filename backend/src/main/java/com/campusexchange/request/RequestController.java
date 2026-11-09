@@ -26,20 +26,24 @@ public class RequestController {
     private final ItemRequestRepository requestRepository;
     private final ListingRepository listingRepository;
     private final UserRepository userRepository;
+    private final ExchangeConfirmationRepository confirmationRepository;
 
     public RequestController(ItemRequestRepository requestRepository,
                              ListingRepository listingRepository,
-                             UserRepository userRepository) {
+                             UserRepository userRepository,
+                             ExchangeConfirmationRepository confirmationRepository) {
         this.requestRepository = requestRepository;
         this.listingRepository = listingRepository;
         this.userRepository = userRepository;
+        this.confirmationRepository = confirmationRepository;
     }
 
-    private ItemRequestResponseDto toDto(ItemRequest req) {
+    private ItemRequestResponseDto toDto(ItemRequest req, Long currentUserId) {
         Listing listing = listingRepository.findById(req.getListingId()).orElse(null);
         String buyerName = userRepository.findById(req.getBuyerId()).map(User::getFullName).orElse("Unknown Student");
         String sellerName = userRepository.findById(req.getSellerId()).map(User::getFullName).orElse("Unknown Student");
-        return ItemRequestResponseDto.from(req, listing, buyerName, sellerName);
+        List<ExchangeConfirmation> confirmations = confirmationRepository.findByRequestId(req.getId());
+        return ItemRequestResponseDto.from(req, listing, buyerName, sellerName, confirmations, currentUserId);
     }
 
     @PostMapping
@@ -81,14 +85,14 @@ public class RequestController {
         itemRequest.setNote(req.note() != null ? req.note().trim() : null);
 
         ItemRequest saved = requestRepository.save(itemRequest);
-        return ApiResponse.success("Request sent to seller", toDto(saved));
+        return ApiResponse.success("Request sent to seller", toDto(saved, currentUserId));
     }
 
     @GetMapping("/sent")
     public ApiResponse<List<ItemRequestResponseDto>> getSentRequests(@AuthenticationPrincipal Long currentUserId) {
         List<ItemRequestResponseDto> dtos = requestRepository.findByBuyerIdOrderByCreatedAtDesc(currentUserId)
                 .stream()
-                .map(this::toDto)
+                .map(r -> toDto(r, currentUserId))
                 .toList();
         return ApiResponse.success(dtos);
     }
@@ -97,7 +101,7 @@ public class RequestController {
     public ApiResponse<List<ItemRequestResponseDto>> getReceivedRequests(@AuthenticationPrincipal Long currentUserId) {
         List<ItemRequestResponseDto> dtos = requestRepository.findBySellerIdOrderByCreatedAtDesc(currentUserId)
                 .stream()
-                .map(this::toDto)
+                .map(r -> toDto(r, currentUserId))
                 .toList();
         return ApiResponse.success(dtos);
     }
@@ -112,7 +116,7 @@ public class RequestController {
             throw new ResourceNotFoundException("Request not found"); // Prevents IDOR probe
         }
 
-        return ApiResponse.success(toDto(req));
+        return ApiResponse.success(toDto(req, currentUserId));
     }
 
     @PatchMapping("/{id}/accept")
@@ -149,7 +153,7 @@ public class RequestController {
         req.setAcceptedAt(Instant.now());
         ItemRequest saved = requestRepository.save(req);
 
-        return ApiResponse.success("Request accepted. Conversation is now active.", toDto(saved));
+        return ApiResponse.success("Request accepted. Conversation is now active.", toDto(saved, currentUserId));
     }
 
     @PatchMapping("/{id}/decline")
@@ -171,7 +175,7 @@ public class RequestController {
         req.setDeclinedAt(Instant.now());
         ItemRequest saved = requestRepository.save(req);
 
-        return ApiResponse.success("Request declined", toDto(saved));
+        return ApiResponse.success("Request declined", toDto(saved, currentUserId));
     }
 
     @PatchMapping("/{id}/cancel")
@@ -200,35 +204,67 @@ public class RequestController {
         req.setStatus("CANCELLED");
         ItemRequest saved = requestRepository.save(req);
 
-        return ApiResponse.success("Request cancelled", toDto(saved));
+        return ApiResponse.success("Request cancelled", toDto(saved, currentUserId));
     }
 
-    @PatchMapping("/{id}/complete")
+    /**
+     * Mutual Exchange Completion Confirmation (Section 9.5 & 13.13)
+     * Requires confirmations from both the buyer and seller before marking COMPLETED
+     * and permanently updating inventory.
+     */
+    @PatchMapping("/{id}/confirm-completion")
     @Transactional
-    public ApiResponse<ItemRequestResponseDto> completeRequest(@PathVariable Long id,
-                                                               @AuthenticationPrincipal Long currentUserId) {
+    public ApiResponse<ItemRequestResponseDto> confirmCompletion(@PathVariable Long id,
+                                                                 @AuthenticationPrincipal Long currentUserId) {
         ItemRequest req = requestRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Request not found"));
 
-        if (!currentUserId.equals(req.getSellerId())) {
-            throw new UnauthorizedException("Only the seller can mark this exchange complete");
+        boolean isBuyer = currentUserId.equals(req.getBuyerId());
+        boolean isSeller = currentUserId.equals(req.getSellerId());
+
+        if (!isBuyer && !isSeller) {
+            throw new UnauthorizedException("Only exchange participants can confirm completion");
         }
 
         if (!"ACCEPTED".equals(req.getStatus())) {
-            throw new ConflictException("Only accepted requests can be marked as completed");
+            throw new ConflictException("Only accepted requests can be confirmed for completion");
         }
 
-        Listing listing = listingRepository.lockById(req.getListingId())
+        if (confirmationRepository.existsByRequestIdAndConfirmedBy(id, currentUserId)) {
+            throw new ConflictException("You have already submitted confirmation for this exchange");
+        }
+
+        Listing listing = listingRepository.findById(req.getListingId())
                 .orElseThrow(() -> new ResourceNotFoundException("Listing not found"));
 
-        boolean isPermanentSale = "SELL".equals(listing.getTransactionType());
-        releaseStock(listing, req.getQuantity(), isPermanentSale);
-        listingRepository.save(listing);
+        String confirmationType = "SELL".equals(listing.getTransactionType())
+                ? "SALE_COMPLETED"
+                : "ITEM_RETURNED";
 
-        req.setStatus("COMPLETED");
-        ItemRequest saved = requestRepository.save(req);
+        ExchangeConfirmation confirmation = new ExchangeConfirmation();
+        confirmation.setRequestId(id);
+        confirmation.setConfirmedBy(currentUserId);
+        confirmation.setConfirmationType(confirmationType);
+        confirmationRepository.save(confirmation);
 
-        return ApiResponse.success("Exchange marked as completed", toDto(saved));
+        long totalConfirmations = confirmationRepository.countByRequestIdAndConfirmationType(id, confirmationType);
+
+        if (totalConfirmations >= 2) {
+            // Both parties have confirmed: finalize exchange under row lock
+            Listing lockedListing = listingRepository.lockById(req.getListingId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Listing not found"));
+
+            boolean isPermanentSale = "SELL".equals(lockedListing.getTransactionType());
+            releaseStock(lockedListing, req.getQuantity(), isPermanentSale);
+            listingRepository.save(lockedListing);
+
+            req.setStatus("COMPLETED");
+            ItemRequest saved = requestRepository.save(req);
+
+            return ApiResponse.success("Both parties have confirmed! Exchange successfully finalized.", toDto(saved, currentUserId));
+        }
+
+        return ApiResponse.success("Your confirmation has been recorded! Waiting for classmate to confirm.", toDto(req, currentUserId));
     }
 
     private void releaseStock(Listing listing, int quantity, boolean sold) {

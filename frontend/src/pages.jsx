@@ -819,12 +819,26 @@ export function Requests() {
                     <button className="btn ghost" onClick={() => act(r.id, 'decline')}>Decline</button>
                   </>
                 )}
-                {tab === 'received' && r.status === 'ACCEPTED' && (
-                  <button className="btn ghost" onClick={() => act(r.id, 'complete')}>
-                    {r.transactionType === 'SELL' ? 'Mark Completed' : 'Mark Returned'}
-                  </button>
+                {r.status === 'ACCEPTED' && (
+                  <>
+                    {r.peerHasConfirmed && (
+                      <span style={{ color: '#059669', fontWeight: 700, fontSize: '0.85rem' }}>
+                        ✓ Classmate confirmed
+                      </span>
+                    )}
+                    {r.canConfirm && (
+                      <button className="btn" onClick={() => act(r.id, 'confirm-completion')}>
+                        {r.transactionType === 'SELL' ? 'Confirm Exchange' : 'Confirm Return'}
+                      </button>
+                    )}
+                    {r.awaitingPeerConfirmation && (
+                      <span style={{ color: '#059669', background: '#ecfdf5', padding: '4px 10px', borderRadius: '99px', fontSize: '0.82rem', fontWeight: 600 }}>
+                        ✓ You confirmed · Awaiting peer
+                      </span>
+                    )}
+                  </>
                 )}
-                {tab === 'sent' && ['PENDING', 'ACCEPTED'].includes(r.status) && (
+                {tab === 'sent' && r.status === 'PENDING' && (
                   <button className="btn ghost" onClick={() => act(r.id, 'cancel')}>Cancel Request</button>
                 )}
                 {['ACCEPTED', 'COMPLETED'].includes(r.status) && (
