@@ -14,6 +14,7 @@ import {
   VerifyEmail,
   ForgotPassword,
   ResetPassword,
+  PublicProfile,
 } from './pages.jsx';
 
 function VerificationBanner() {
@@ -119,6 +120,7 @@ export default function App() {
           <Route path="/listing/:id" element={<ListingDetail />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/profile/:id" element={<PublicProfile />} />
           <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password" element={<ResetPassword />} />

@@ -25,8 +25,6 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/v1/listings")
@@ -56,6 +54,12 @@ public class ListingController {
         String categoryName = categoryRepository.findById(l.getCategoryId())
                 .map(Category::getName)
                 .orElse("");
+
+        List<ListingImage> imgs = imageRepository.findByListingIdOrderByDisplayOrderAsc(l.getId());
+        if (!imgs.isEmpty()) {
+            l.setImages(imgs);
+        }
+
         return ListingResponseDto.from(l, sellerName, categoryName);
     }
 
@@ -64,6 +68,9 @@ public class ListingController {
             @RequestParam(defaultValue = "") String q,
             @RequestParam(defaultValue = "") String type,
             @RequestParam(defaultValue = "0") Long category,
+            @RequestParam(defaultValue = "") String condition,
+            @RequestParam(required = false) BigDecimal minPrice,
+            @RequestParam(required = false) BigDecimal maxPrice,
             @RequestParam(defaultValue = "newest") String sort,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "12") int size) {
@@ -77,10 +84,13 @@ public class ListingController {
         int clampedPage = Math.max(page, 0);
         int clampedSize = Math.min(Math.max(size, 1), 50);
 
-        Page<Listing> pageResult = listingRepository.search(
+        Page<Listing> pageResult = listingRepository.searchWithFilters(
                 q.trim(),
                 type.trim(),
                 category,
+                condition.trim(),
+                minPrice,
+                maxPrice,
                 PageRequest.of(clampedPage, clampedSize, sortOrder)
         );
 
@@ -166,7 +176,7 @@ public class ListingController {
 
         Listing saved = listingRepository.save(listing);
 
-        // If client provided multiple image URLs
+        // Multiple images provided as URLs
         if (req.imageUrls() != null && !req.imageUrls().isEmpty()) {
             int order = 0;
             for (String url : req.imageUrls()) {
@@ -213,12 +223,82 @@ public class ListingController {
         image.setDisplayOrder(existing.size());
         imageRepository.save(image);
 
-        if (listing.getImageUrl() == null || listing.getImageUrl().isBlank()) {
+        if (listing.getImageUrl() == null || listing.getImageUrl().isBlank() || existing.isEmpty()) {
             listing.setImageUrl(imageUrl);
             listingRepository.save(listing);
         }
 
         return ApiResponse.success("Image uploaded successfully", toDto(listing));
+    }
+
+    @DeleteMapping("/{id}/images/{imageId}")
+    @Transactional
+    public ApiResponse<ListingResponseDto> deleteImage(@PathVariable Long id,
+                                                       @PathVariable Long imageId,
+                                                       @AuthenticationPrincipal Long currentUserId) {
+        Listing listing = listingRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Listing not found"));
+
+        if (!listing.getSellerId().equals(currentUserId)) {
+            throw new UnauthorizedException("You can only modify images for your own listings");
+        }
+
+        ListingImage image = imageRepository.findById(imageId)
+                .filter(img -> img.getListing().getId().equals(id))
+                .orElseThrow(() -> new ResourceNotFoundException("Image not found on this listing"));
+
+        storageService.delete(image.getStorageKey());
+        imageRepository.delete(image);
+
+        // Update primary image if the removed one was primary
+        List<ListingImage> remaining = imageRepository.findByListingIdOrderByDisplayOrderAsc(id);
+        if (!remaining.isEmpty()) {
+            if (image.isPrimary()) {
+                ListingImage newPrimary = remaining.get(0);
+                newPrimary.setPrimary(true);
+                imageRepository.save(newPrimary);
+                listing.setImageUrl(newPrimary.getImageUrl());
+            }
+        } else {
+            listing.setImageUrl(null);
+        }
+        listingRepository.save(listing);
+
+        return ApiResponse.success("Image removed successfully", toDto(listing));
+    }
+
+    @PatchMapping("/{id}/images/{imageId}/primary")
+    @Transactional
+    public ApiResponse<ListingResponseDto> setPrimaryImage(@PathVariable Long id,
+                                                           @PathVariable Long imageId,
+                                                           @AuthenticationPrincipal Long currentUserId) {
+        Listing listing = listingRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Listing not found"));
+
+        if (!listing.getSellerId().equals(currentUserId)) {
+            throw new UnauthorizedException("You can only modify images for your own listings");
+        }
+
+        List<ListingImage> images = imageRepository.findByListingIdOrderByDisplayOrderAsc(id);
+        ListingImage target = null;
+        for (ListingImage img : images) {
+            if (img.getId().equals(imageId)) {
+                img.setPrimary(true);
+                target = img;
+            } else {
+                img.setPrimary(false);
+            }
+            imageRepository.save(img);
+        }
+
+        if (target == null) {
+            throw new ResourceNotFoundException("Image not found on this listing");
+        }
+
+        listing.setImageUrl(target.getImageUrl());
+        listingRepository.save(listing);
+
+        return ApiResponse.success("Primary image updated", toDto(listing));
     }
 
     @DeleteMapping("/{id}")

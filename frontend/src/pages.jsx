@@ -9,30 +9,46 @@ const Tag = ({ t }) => <span className={'tag tag-' + t}>{t}</span>;
 function Card({ l }) {
   const thumb = l.imageUrl || (l.images && l.images.length > 0 ? l.images[0] : null);
   return (
-    <Link to={`/listing/${l.id}`} className="card">
-      <div className="thumb">
-        {thumb ? <img src={thumb} alt={l.title} loading="lazy" /> : <span>No photo</span>}
-      </div>
+    <div className="card">
+      <Link to={`/listing/${l.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+        <div className="thumb">
+          {thumb ? <img src={thumb} alt={l.title} loading="lazy" /> : <span>No photo</span>}
+        </div>
+      </Link>
       <div className="card-body">
         <div className="row">
           <strong className="price">{priceText(l)}</strong>
           <Tag t={l.transactionType} />
         </div>
-        <h3>{l.title}</h3>
+        <Link to={`/listing/${l.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+          <h3>{l.title}</h3>
+        </Link>
         <p className="muted">{l.categoryName} · <span className="badge-cond">{conditionText(l.itemCondition)}</span></p>
-        <p className="muted" style={{ marginTop: 'auto', paddingTop: '8px' }}>
-          Posted by {l.sellerName}{l.status !== 'AVAILABLE' && ' · (Unavailable)'}
-        </p>
+        <div className="row" style={{ marginTop: 'auto', paddingTop: '8px' }}>
+          <Link to={`/profile/${l.sellerId}`} className="link" style={{ padding: 0, fontSize: '0.85rem' }}>
+            By {l.sellerName}
+          </Link>
+          {l.status !== 'AVAILABLE' && <span className="muted" style={{ fontSize: '0.8rem' }}>(Unavailable)</span>}
+        </div>
       </div>
-    </Link>
+    </div>
   );
 }
 
 /* ==========================================================================
-   1. Browse Marketplace Catalog
+   1. Browse Marketplace Catalog (with enhanced price & condition filters)
    ========================================================================== */
 export function Browse() {
-  const [f, setF] = useState({ q: '', type: '', category: 0, sort: 'newest', page: 0 });
+  const [f, setF] = useState({
+    q: '',
+    type: '',
+    category: 0,
+    condition: '',
+    minPrice: '',
+    maxPrice: '',
+    sort: 'newest',
+    page: 0,
+  });
   const [cats, setCats] = useState([]);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -49,10 +65,14 @@ export function Browse() {
       q: f.q,
       type: f.type,
       category: f.category,
+      condition: f.condition,
       sort: f.sort,
       page: f.page,
       size: 12,
     });
+    if (f.minPrice) qs.set('minPrice', f.minPrice);
+    if (f.maxPrice) qs.set('maxPrice', f.maxPrice);
+
     api('/listings?' + qs).then(setData).catch((e) => setError(e.message));
   }, [f]);
 
@@ -60,6 +80,12 @@ export function Browse() {
     const t = setTimeout(load, 250);
     return () => clearTimeout(t);
   }, [load]);
+
+  const clearFilters = () => {
+    setF({ q: '', type: '', category: 0, condition: '', minPrice: '', maxPrice: '', sort: 'newest', page: 0 });
+  };
+
+  const hasActiveFilters = f.q || f.type || f.category !== 0 || f.condition || f.minPrice || f.maxPrice;
 
   return (
     <>
@@ -97,17 +123,45 @@ export function Browse() {
         <select value={f.category} onChange={(e) => set({ category: Number(e.target.value) })}>
           <option value={0}>All Categories</option>
           {cats.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
+            <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </select>
+
+        <select value={f.condition} onChange={(e) => set({ condition: e.target.value })}>
+          <option value="">All Conditions</option>
+          <option value="NEW">New (Unopened)</option>
+          <option value="LIKE_NEW">Like New</option>
+          <option value="GOOD">Good</option>
+          <option value="FAIR">Fair</option>
+        </select>
+
+        <div className="price-inputs">
+          <input
+            type="number"
+            placeholder="Min ₹"
+            value={f.minPrice}
+            onChange={(e) => set({ minPrice: e.target.value })}
+          />
+          <span className="muted">-</span>
+          <input
+            type="number"
+            placeholder="Max ₹"
+            value={f.maxPrice}
+            onChange={(e) => set({ maxPrice: e.target.value })}
+          />
+        </div>
 
         <select value={f.sort} onChange={(e) => set({ sort: e.target.value })}>
           <option value="newest">Newest First</option>
           <option value="price_asc">Price: Low to High</option>
           <option value="price_desc">Price: High to Low</option>
         </select>
+
+        {hasActiveFilters && (
+          <button className="link" onClick={clearFilters} style={{ fontSize: '0.85rem' }}>
+            Reset Filters
+          </button>
+        )}
       </div>
 
       {error ? (
@@ -123,9 +177,9 @@ export function Browse() {
         </div>
       ) : data.items.length === 0 ? (
         <div className="state">
-          <h3>No items match your search.</h3>
-          <p>Be the first to list this product for your classmates!</p>
-          <Link to="/sell" className="btn">+ Create Listing</Link>
+          <h3>No items match your filters.</h3>
+          <p>Try clearing your search query or price bounds.</p>
+          <button className="btn ghost" onClick={clearFilters} style={{ marginTop: '10px' }}>Clear All Filters</button>
         </div>
       ) : (
         <>
@@ -161,7 +215,7 @@ export function Browse() {
 }
 
 /* ==========================================================================
-   2. Listing Details Screen
+   2. Listing Details Screen (with interactive multi-photo gallery)
    ========================================================================== */
 export function ListingDetail() {
   const { id } = useParams();
@@ -172,6 +226,8 @@ export function ListingDetail() {
   const [qty, setQty] = useState(1);
   const [note, setNote] = useState('');
   const [msg, setMsg] = useState('');
+  const [activePhotoIdx, setActivePhotoIdx] = useState(0);
+
   const presets = [
     "Hi, I'm interested in this item. Is it available?",
     "Can we discuss meeting on campus?",
@@ -180,7 +236,10 @@ export function ListingDetail() {
 
   useEffect(() => {
     api('/listings/' + id)
-      .then(setL)
+      .then((data) => {
+        setL(data);
+        setActivePhotoIdx(0);
+      })
       .catch((e) => setError(e.message));
   }, [id]);
 
@@ -189,6 +248,12 @@ export function ListingDetail() {
 
   const mine = user && user.id === l.sellerId;
   const isUnverified = user && !user.verified;
+
+  const galleryImages = l.images && l.images.length > 0
+    ? l.images
+    : (l.imageUrl ? [l.imageUrl] : []);
+
+  const currentPhoto = galleryImages[activePhotoIdx] || l.imageUrl;
 
   const send = async (e) => {
     e.preventDefault();
@@ -219,18 +284,30 @@ export function ListingDetail() {
     }
   };
 
-  const thumb = l.imageUrl || (l.images && l.images.length > 0 ? l.images[0] : null);
-
   return (
     <div className="detail">
       <div className="gallery">
         <div className="main-photo">
-          {thumb ? (
-            <img src={thumb} alt={l.title} />
+          {currentPhoto ? (
+            <img src={currentPhoto} alt={l.title} />
           ) : (
             <div className="no-photo">No Photo Available</div>
           )}
         </div>
+
+        {galleryImages.length > 1 && (
+          <div className="gallery-thumbs">
+            {galleryImages.map((imgUrl, idx) => (
+              <div
+                key={idx}
+                className={'gallery-thumb' + (idx === activePhotoIdx ? ' active' : '')}
+                onClick={() => setActivePhotoIdx(idx)}
+              >
+                <img src={imgUrl} alt={`Thumbnail ${idx + 1}`} />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="info">
@@ -247,7 +324,10 @@ export function ListingDetail() {
 
         <div className="seller-box">
           <p className="muted">Campus Seller</p>
-          <p className="seller-name">{l.sellerName}</p>
+          <Link to={`/profile/${l.sellerId}`} className="seller-name" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <span>{l.sellerName}</span>
+            <span style={{ fontSize: '0.85rem', color: 'var(--brand-600)' }}>View Profile →</span>
+          </Link>
         </div>
 
         {mine ? (
@@ -308,11 +388,12 @@ export function ListingDetail() {
 }
 
 /* ==========================================================================
-   3. Create Product Listing
+   3. Create Product Listing (with Multi-File Uploader & Previews)
    ========================================================================== */
 export function Sell() {
   const { user } = useAuth();
   const nav = useNavigate();
+  const fileInputRef = useRef(null);
   const [cats, setCats] = useState([]);
   const [f, setF] = useState({
     title: '',
@@ -325,6 +406,9 @@ export function Sell() {
     priceBasis: 'PER_DAY',
     imageUrl: '',
   });
+
+  const [selectedFiles, setSelectedFiles] = useState([]);
+  const [filePreviews, setFilePreviews] = useState([]);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -336,6 +420,23 @@ export function Sell() {
   }, []);
 
   const up = (k) => (e) => setF({ ...f, [k]: e.target.value });
+
+  const handleFileChange = (e) => {
+    const files = Array.from(e.target.files);
+    if (selectedFiles.length + files.length > 5) {
+      alert('You can upload a maximum of 5 images per listing.');
+      return;
+    }
+    const updated = [...selectedFiles, ...files].slice(0, 5);
+    setSelectedFiles(updated);
+    setFilePreviews(updated.map((file) => URL.createObjectURL(file)));
+  };
+
+  const removeFile = (idx) => {
+    const updated = selectedFiles.filter((_, i) => i !== idx);
+    setSelectedFiles(updated);
+    setFilePreviews(updated.map((file) => URL.createObjectURL(file)));
+  };
 
   if (user && !user.verified) {
     return (
@@ -362,8 +463,20 @@ export function Sell() {
         price: f.transactionType === 'LEND' ? 0 : Number(f.price || 0),
         priceBasis: f.transactionType === 'RENT' ? f.priceBasis : 'NONE',
       };
-      const res = await api('/listings', { method: 'POST', body: payload });
-      nav('/listing/' + res.id);
+
+      // 1. Create the listing
+      const created = await api('/listings', { method: 'POST', body: payload });
+
+      // 2. Upload any selected photo files
+      if (selectedFiles.length > 0) {
+        for (const file of selectedFiles) {
+          const formData = new FormData();
+          formData.append('file', file);
+          await api(`/listings/${created.id}/images`, { method: 'POST', body: formData });
+        }
+      }
+
+      nav('/listing/' + created.id);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -467,8 +580,36 @@ export function Sell() {
         </div>
       )}
 
+      <div>
+        <label>Upload Photos (Up to 5 images)</label>
+        <div className="upload-zone" onClick={() => fileInputRef.current?.click()}>
+          <p style={{ fontWeight: 600, color: 'var(--ink-700)' }}>📷 Click to upload photo files</p>
+          <p className="muted" style={{ fontSize: '0.8rem' }}>Supports JPG, PNG, WEBP up to 5MB each</p>
+          <input
+            type="file"
+            ref={fileInputRef}
+            multiple
+            accept="image/png,image/jpeg,image/webp"
+            style={{ display: 'none' }}
+            onChange={handleFileChange}
+          />
+        </div>
+
+        {filePreviews.length > 0 && (
+          <div className="upload-previews">
+            {filePreviews.map((src, i) => (
+              <div key={i} className="upload-preview">
+                <img src={src} alt={`Preview ${i + 1}`} />
+                <button type="button" className="remove-btn" onClick={() => removeFile(i)}>✕</button>
+                {i === 0 && <span className="primary-tag">Primary</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <label>
-        Photo URL (or Image link)
+        Or paste an Image URL (Optional)
         <input
           type="url"
           placeholder="https://images.unsplash.com/..."
@@ -486,7 +627,69 @@ export function Sell() {
 }
 
 /* ==========================================================================
-   4. My Listings Screen
+   4. Public Student Seller Profile (/profile/:id)
+   ========================================================================== */
+export function PublicProfile() {
+  const { id } = useParams();
+  const [profile, setProfile] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    api(`/users/${id}/public-profile`)
+      .then(setProfile)
+      .catch((e) => setError(e.message));
+  }, [id]);
+
+  if (error) return <div className="state"><p className="error">{error}</p></div>;
+  if (!profile) return <p className="muted" style={{ padding: '40px 0' }}>Loading student profile...</p>;
+
+  const initials = profile.fullName
+    ? profile.fullName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+    : 'U';
+
+  const joinedYear = profile.joinedAt
+    ? new Date(profile.joinedAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+    : 'Recently';
+
+  return (
+    <>
+      <div className="profile-card">
+        <div className="avatar-circle">
+          {profile.profileImageUrl ? (
+            <img src={profile.profileImageUrl} alt={profile.fullName} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+          ) : (
+            <span>{initials}</span>
+          )}
+        </div>
+        <div className="profile-info">
+          <h1>{profile.fullName}</h1>
+          <div className="profile-meta">
+            {profile.verified && <span className="badge-verified">✓ Verified Campus Member</span>}
+            {profile.department && <span>Department: <strong>{profile.department}</strong></span>}
+            {profile.studyYear && <span>{profile.studyYear}</span>}
+            <span>Member since: {joinedYear}</span>
+          </div>
+        </div>
+      </div>
+
+      <h2>Active Items ({profile.activeListingsCount})</h2>
+      {profile.activeListings.length === 0 ? (
+        <div className="state">
+          <p>This student currently has no active marketplace listings.</p>
+        </div>
+      ) : (
+        <div className="grid">
+          {profile.activeListings.map((l) => (
+            <Card key={l.id} l={l} />
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ==========================================================================
+   5. My Listings Screen
    ========================================================================== */
 export function MyListings() {
   const [items, setItems] = useState(null);
@@ -548,7 +751,7 @@ export function MyListings() {
 }
 
 /* ==========================================================================
-   5. Requests Screen
+   6. Requests Screen
    ========================================================================== */
 export function Requests() {
   const [tab, setTab] = useState('received');
@@ -637,7 +840,7 @@ export function Requests() {
 }
 
 /* ==========================================================================
-   6. Chat (Private Messaging on Accepted Requests)
+   7. Chat (Private Messaging on Accepted Requests)
    ========================================================================== */
 export function Chat() {
   const { id } = useParams();
@@ -716,7 +919,7 @@ export function Chat() {
 }
 
 /* ==========================================================================
-   7. Email Verification Screen (/verify-email?token=xyz)
+   8. Email Verification Screen (/verify-email?token=xyz)
    ========================================================================== */
 export function VerifyEmail() {
   const [params] = useSearchParams();
@@ -797,7 +1000,7 @@ export function VerifyEmail() {
 }
 
 /* ==========================================================================
-   8. Forgot Password Screen (/forgot-password)
+   9. Forgot Password Screen (/forgot-password)
    ========================================================================== */
 export function ForgotPassword() {
   const [email, setEmail] = useState('');
@@ -847,7 +1050,7 @@ export function ForgotPassword() {
 }
 
 /* ==========================================================================
-   9. Reset Password Screen (/reset-password?token=xyz)
+   10. Reset Password Screen (/reset-password?token=xyz)
    ========================================================================== */
 export function ResetPassword() {
   const [params] = useSearchParams();
@@ -917,7 +1120,7 @@ export function ResetPassword() {
 }
 
 /* ==========================================================================
-   10. Sign In Screen
+   11. Sign In Screen
    ========================================================================== */
 export function Login() {
   const { login } = useAuth();
@@ -976,7 +1179,7 @@ export function Login() {
 }
 
 /* ==========================================================================
-   11. Registration Screen
+   12. Registration Screen
    ========================================================================== */
 export function Register() {
   const { register } = useAuth();
