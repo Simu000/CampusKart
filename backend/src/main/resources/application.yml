@@ -1,0 +1,12 @@
+# Dev default = local H2 file DB. For PostgreSQL set DB_URL=jdbc:postgresql://host:5432/campus, DB_USER, DB_PASS.
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:h2:file:./data/campus;AUTO_SERVER=TRUE}
+    username: ${DB_USER:sa}
+    password: ${DB_PASS:}
+  jpa:
+    hibernate.ddl-auto: update
+app:
+  jwt-secret: ${JWT_SECRET:dev-only-secret-change-me-dev-only-secret-change-me}
+  email-domains: ${UNIVERSITY_EMAIL_DOMAINS:}   # comma separated, e.g. example.edu. Empty = allow any (dev only)
+  cors-origin: ${CORS_ORIGIN:http://localhost:5173}
