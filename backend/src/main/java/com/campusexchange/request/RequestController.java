@@ -47,6 +47,13 @@ public class RequestController {
     @Transactional
     public ApiResponse<ItemRequestResponseDto> createRequest(@Valid @RequestBody CreateItemRequest req,
                                                              @AuthenticationPrincipal Long currentUserId) {
+        User buyer = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("User profile not found"));
+
+        if (!buyer.isVerified()) {
+            throw new UnauthorizedException("Please verify your university email before submitting item requests.");
+        }
+
         Listing listing = listingRepository.findById(req.listingId())
                 .orElseThrow(() -> new ResourceNotFoundException("Listing not found"));
 

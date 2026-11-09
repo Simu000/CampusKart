@@ -113,6 +113,13 @@ public class ListingController {
     @Transactional
     public ApiResponse<ListingResponseDto> createListing(@Valid @RequestBody CreateListingRequest req,
                                                          @AuthenticationPrincipal Long currentUserId) {
+        User seller = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("User profile not found"));
+
+        if (!seller.isVerified()) {
+            throw new UnauthorizedException("Please verify your university email before creating product listings.");
+        }
+
         String type = req.transactionType().trim().toUpperCase();
         if (!List.of("SELL", "RENT", "LEND").contains(type)) {
             throw new BadRequestException("Transaction type must be SELL, RENT, or LEND");
