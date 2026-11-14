@@ -1,8 +1,0 @@
-spring:
-  datasource:
-    url: jdbc:postgresql://localhost:5432/campus_exchange
-    username: postgres
-    password: "Simu@2006"
-app:
-  jwt-secret: campus-exchange-local-secret-key-at-least-32-chars
-  

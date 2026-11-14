@@ -11,10 +11,14 @@ export function AuthProvider({ children }) {
   const reloadUser = async () => {
     try {
       const u = await api('/auth/me');
-      setUser(u);
-      return u;
+      if (u && u.id) {
+        setUser(u);
+        return u;
+      }
     } catch {
-      setUser(null);
+      if (!localStorage.getItem('token')) {
+        setUser(null);
+      }
       return null;
     }
   };
@@ -32,7 +36,10 @@ export function AuthProvider({ children }) {
     if (r?.token) {
       localStorage.setItem('token', r.token);
     }
-    setUser(r?.user || null);
+    const userData = r?.user || (r?.email ? r : null);
+    if (userData) {
+      setUser(userData);
+    }
   };
 
   const login = async (email, password) => {
@@ -43,7 +50,9 @@ export function AuthProvider({ children }) {
 
   const register = async (userData) => {
     const res = await api('/auth/register', { method: 'POST', body: userData });
-    startSession(res);
+    if (res?.token && res?.user?.verified) {
+      startSession(res);
+    }
     return res;
   };
 
@@ -56,7 +65,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, ready, login, register, logout, reloadUser }}>
+    <AuthContext.Provider value={{ user, setUser, ready, login, register, logout, reloadUser, startSession }}>
       {children}
     </AuthContext.Provider>
   );

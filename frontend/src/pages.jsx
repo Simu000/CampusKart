@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, conditionText, priceText } from './api';
 import { useAuth } from './auth.jsx';
+import ReportModal from './components/ReportModal.jsx';
+import { blockApi } from './services/adminApi.js';
 
 const Err = ({ msg }) => (msg ? <p className="error" role="alert">{msg}</p> : null);
 const Tag = ({ t }) => <span className={'tag tag-' + t}>{t}</span>;
@@ -227,6 +229,7 @@ export function ListingDetail() {
   const [note, setNote] = useState('');
   const [msg, setMsg] = useState('');
   const [activePhotoIdx, setActivePhotoIdx] = useState(0);
+  const [showReport, setShowReport] = useState(false);
 
   const presets = [
     "Hi, I'm interested in this item. Is it available?",
@@ -333,7 +336,10 @@ export function ListingDetail() {
         {mine ? (
           <div className="mine-actions" style={{ background: '#f1f5f9', padding: '16px', borderRadius: '10px' }}>
             <p className="muted" style={{ marginBottom: '10px' }}>This is your listing.</p>
-            <button className="btn danger ghost" onClick={remove}>Remove Listing</button>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <Link to={`/edit-listing/${l.id}`} className="btn">Edit Listing</Link>
+              <button className="btn danger ghost" onClick={remove}>Remove Listing</button>
+            </div>
           </div>
         ) : l.status !== 'AVAILABLE' || l.qtyAvailable <= 0 ? (
           <div className="box">
@@ -381,6 +387,27 @@ export function ListingDetail() {
               Send Request to Seller
             </button>
           </form>
+        )}
+
+        {!mine && user && (
+          <div style={{ marginTop: '18px', textAlign: 'center' }}>
+            <button
+              className="link"
+              style={{ fontSize: '0.82rem', color: 'var(--ink-400)' }}
+              onClick={() => setShowReport(true)}
+            >
+              🚩 Report this listing
+            </button>
+          </div>
+        )}
+
+        {showReport && (
+          <ReportModal
+            listingId={l.id}
+            targetTitle={l.title}
+            onClose={() => setShowReport(false)}
+            onSuccess={() => alert('Report submitted. Thank you for helping keep campus exchange safe.')}
+          />
         )}
       </div>
     </div>
@@ -631,14 +658,41 @@ export function Sell() {
    ========================================================================== */
 export function PublicProfile() {
   const { id } = useParams();
+  const { user } = useAuth();
   const [profile, setProfile] = useState(null);
   const [error, setError] = useState('');
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [blockMsg, setBlockMsg] = useState('');
 
   useEffect(() => {
     api(`/users/${id}/public-profile`)
       .then(setProfile)
       .catch((e) => setError(e.message));
-  }, [id]);
+
+    if (user && user.id !== Number(id)) {
+      blockApi.getBlocked().then((list) => {
+        setIsBlocked(list.some((u) => u.id === Number(id)));
+      }).catch(() => {});
+    }
+  }, [id, user]);
+
+  const handleBlockToggle = async () => {
+    try {
+      if (isBlocked) {
+        await blockApi.unblock(id);
+        setIsBlocked(false);
+        setBlockMsg('Student unblocked');
+      } else {
+        await blockApi.block(id);
+        setIsBlocked(true);
+        setBlockMsg('Student blocked. They can no longer contact you.');
+      }
+      setTimeout(() => setBlockMsg(''), 3000);
+    } catch (err) {
+      setError(err.message);
+    }
+  };
 
   if (error) return <div className="state"><p className="error">{error}</p></div>;
   if (!profile) return <p className="muted" style={{ padding: '40px 0' }}>Loading student profile...</p>;
@@ -669,8 +723,36 @@ export function PublicProfile() {
             {profile.studyYear && <span>{profile.studyYear}</span>}
             <span>Member since: {joinedYear}</span>
           </div>
+          {user && user.id !== Number(id) && (
+            <div style={{ display: 'flex', gap: '10px', marginTop: '12px', alignItems: 'center' }}>
+              <button
+                className="btn ghost"
+                style={{ padding: '4px 12px', fontSize: '0.82rem' }}
+                onClick={handleBlockToggle}
+              >
+                {isBlocked ? 'Unblock Student' : 'Block Student'}
+              </button>
+              <button
+                className="btn ghost danger"
+                style={{ padding: '4px 12px', fontSize: '0.82rem' }}
+                onClick={() => setShowReport(true)}
+              >
+                Report Student
+              </button>
+              {blockMsg && <span className="ok" style={{ fontSize: '0.82rem' }}>{blockMsg}</span>}
+            </div>
+          )}
         </div>
       </div>
+
+      {showReport && (
+        <ReportModal
+          reportedUserId={id}
+          targetTitle={profile.fullName}
+          onClose={() => setShowReport(false)}
+          onSuccess={() => alert('Report submitted. Thank you for helping keep campus exchange safe.')}
+        />
+      )}
 
       <h2>Active Items ({profile.activeListingsCount})</h2>
       {profile.activeListings.length === 0 ? (
@@ -863,6 +945,7 @@ export function Chat() {
   const [msgs, setMsgs] = useState([]);
   const [text, setText] = useState('');
   const [error, setError] = useState('');
+  const [showReport, setShowReport] = useState(false);
   const end = useRef(null);
 
   const load = useCallback(() => {
@@ -892,12 +975,26 @@ export function Chat() {
     }
   };
 
+  const peerId = req ? (user.id === req.buyerId ? req.sellerId : req.buyerId) : null;
+  const peerName = req ? (user.id === req.buyerId ? req.sellerName : req.buyerName) : 'Classmate';
+
   return (
     <div className="chat">
-      <Link to="/requests" className="link" style={{ paddingLeft: 0, marginBottom: '8px', display: 'inline-block' }}>
-        ← Back to Requests
-      </Link>
-      <h2>{req ? `${req.listingTitle} · ${user.id === req.buyerId ? req.sellerName : req.buyerName}` : 'Conversation'}</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+        <Link to="/requests" className="link" style={{ paddingLeft: 0 }}>
+          ← Back to Requests
+        </Link>
+        {peerId && (
+          <button
+            className="link"
+            style={{ fontSize: '0.82rem', color: 'var(--danger)' }}
+            onClick={() => setShowReport(true)}
+          >
+            🚩 Report Student
+          </button>
+        )}
+      </div>
+      <h2>{req ? `${req.listingTitle} · ${peerName}` : 'Conversation'}</h2>
       <p className="muted">Coordinate your meetup spot on campus. Cash or UPI payments are settled in person.</p>
 
       <div className="msgs">
@@ -928,6 +1025,15 @@ export function Chat() {
       ) : (
         <p className="muted" style={{ textAlign: 'center' }}>This exchange conversation is completed or closed.</p>
       )}
+
+      {showReport && peerId && (
+        <ReportModal
+          reportedUserId={peerId}
+          targetTitle={peerName}
+          onClose={() => setShowReport(false)}
+          onSuccess={() => alert('Report submitted. Our moderation team will investigate.')}
+        />
+      )}
     </div>
   );
 }
@@ -938,7 +1044,7 @@ export function Chat() {
 export function VerifyEmail() {
   const [params] = useSearchParams();
   const token = params.get('token');
-  const { reloadUser } = useAuth();
+  const { reloadUser, startSession } = useAuth();
   const [status, setStatus] = useState(token ? 'verifying' : 'idle');
   const [message, setMessage] = useState('');
   const [resendEmail, setResendEmail] = useState('');
@@ -948,6 +1054,12 @@ export function VerifyEmail() {
     if (!token) return;
     api('/auth/verify-email?token=' + token)
       .then((data) => {
+        if (data?.token) {
+          localStorage.setItem('token', data.token);
+        }
+        if (startSession) {
+          startSession(data);
+        }
         setStatus('success');
         setMessage(data?.message || 'Your university email has been verified!');
         reloadUser();
@@ -956,16 +1068,16 @@ export function VerifyEmail() {
         setStatus('error');
         setMessage(err.message || 'Verification token is invalid or expired.');
       });
-  }, [token, reloadUser]);
+  }, [token, reloadUser, startSession]);
 
   const handleResend = async (e) => {
     e.preventDefault();
-    setResendStatus('Sending...');
+    setResendStatus('Sending verification email...');
     try {
       await api('/auth/resend-verification', { method: 'POST', body: { email: resendEmail } });
-      setResendStatus('Verification link sent! Check your university email inbox.');
+      setResendStatus('Verification email sent! Please check your university email inbox.');
     } catch (err) {
-      setResendStatus(err.message);
+      setResendStatus(err.message || 'Failed to send verification email.');
     }
   };
 
@@ -992,12 +1104,12 @@ export function VerifyEmail() {
         <>
           <h2>{status === 'error' ? 'Verification Link Expired or Invalid' : 'Verify Student Email'}</h2>
           {status === 'error' && <p className="error">{message}</p>}
-          <p className="muted">Enter your university email below to receive a new activation link.</p>
+          <p className="muted">Enter your university email below to receive a verification email link.</p>
           <form onSubmit={handleResend} style={{ display: 'grid', gap: '12px', marginTop: '16px' }}>
             <input
               type="email"
               required
-              placeholder="e.g. rollnumber@university.edu"
+              placeholder="e.g. rollnumber@chitkara.edu.in"
               value={resendEmail}
               onChange={(e) => setResendEmail(e.target.value)}
             />
@@ -1029,7 +1141,7 @@ export function ForgotPassword() {
     setSubmitting(true);
     try {
       await api('/auth/forgot-password', { method: 'POST', body: { email } });
-      setMsg('If an account exists for this university email, a password reset link has been dispatched.');
+      setMsg('If an account exists for this university email, a password reset link has been dispatched to your email inbox.');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1046,7 +1158,7 @@ export function ForgotPassword() {
         <input
           type="email"
           required
-          placeholder="yourname@university.edu"
+          placeholder="yourname@chitkara.edu.in"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
         />
@@ -1137,11 +1249,15 @@ export function ResetPassword() {
    11. Sign In Screen
    ========================================================================== */
 export function Login() {
-  const { login } = useAuth();
+  const { user, login } = useAuth();
   const nav = useNavigate();
   const [f, setF] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  if (user) {
+    return <Navigate to="/" replace />;
+  }
 
   const submit = async (e) => {
     e.preventDefault();
@@ -1166,7 +1282,7 @@ export function Login() {
         <input
           type="email"
           required
-          placeholder="yourname@university.edu"
+          placeholder="yourname@chitkara.edu.in"
           value={f.email}
           onChange={(e) => setF({ ...f, email: e.target.value })}
         />
@@ -1184,6 +1300,26 @@ export function Login() {
         <Link to="/forgot-password" className="link" style={{ fontSize: '0.85rem' }}>Forgot password?</Link>
       </div>
       <Err msg={error} />
+      {error && error.toLowerCase().includes('not verified') && (
+        <div style={{ margin: '10px 0', textAlign: 'center' }}>
+          <button
+            type="button"
+            className="link"
+            style={{ fontSize: '0.85rem' }}
+            onClick={async () => {
+              if (!f.email) return;
+              try {
+                await api('/auth/resend-verification', { method: 'POST', body: { email: f.email } });
+                alert('Verification email resent! Please check your Chitkara email inbox.');
+              } catch (e) {
+                alert(e.message);
+              }
+            }}
+          >
+            Resend verification email to {f.email}
+          </button>
+        </div>
+      )}
       <button className="btn" disabled={loading}>{loading ? 'Signing in...' : 'Sign In'}</button>
       <p className="muted" style={{ textAlign: 'center' }}>
         New student? <Link to="/register">Create an account</Link>
@@ -1196,7 +1332,7 @@ export function Login() {
    12. Registration Screen
    ========================================================================== */
 export function Register() {
-  const { register } = useAuth();
+  const { user, register } = useAuth();
   const [f, setF] = useState({
     fullName: '',
     email: '',
@@ -1208,6 +1344,12 @@ export function Register() {
   const [error, setError] = useState('');
   const [registeredEmail, setRegisteredEmail] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [resendMsg, setResendMsg] = useState('');
+
+  if (user) {
+    return <Navigate to="/" replace />;
+  }
 
   const submit = async (e) => {
     e.preventDefault();
@@ -1232,22 +1374,57 @@ export function Register() {
     }
   };
 
+  const handleResend = async () => {
+    setResending(true);
+    setResendMsg('');
+    try {
+      await api('/auth/resend-verification', { method: 'POST', body: { email: registeredEmail } });
+      setResendMsg('Verification email resent! Please check your Chitkara email inbox.');
+    } catch (err) {
+      setResendMsg(err.message || 'Failed to resend verification email.');
+    } finally {
+      setResending(false);
+    }
+  };
+
   const up = (k) => (e) => setF({ ...f, [k]: e.target.value });
 
   if (registeredEmail) {
     return (
       <div className="form narrow" style={{ textAlign: 'center', margin: '40px auto' }}>
-        <div style={{ fontSize: '3rem', color: 'var(--brand-600)' }}>📬</div>
-        <h2>Almost Done! Verify Your Email</h2>
-        <p className="muted" style={{ margin: '14px 0' }}>
-          We've sent an activation link to <strong>{registeredEmail}</strong>.
+        <div style={{ fontSize: '3.5rem', marginBottom: '8px' }}>📬</div>
+        <h2>Verify Your University Email</h2>
+        <p style={{ margin: '14px 0', fontSize: '1.05rem', color: '#1e293b' }}>
+          We have sent a verification link to <strong>{registeredEmail}</strong>.
         </p>
-        <p className="muted">
-          Please open the verification link in your university inbox to verify your student status.
+
+        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '10px', padding: '16px 20px', margin: '20px 0', textAlign: 'left' }}>
+          <p style={{ fontWeight: 600, color: '#0f172a', marginBottom: '8px' }}>
+            To activate your student account:
+          </p>
+          <ol style={{ paddingLeft: '20px', margin: 0, color: '#475569', fontSize: '0.92rem', lineHeight: 1.6 }}>
+            <li>Open your Chitkara university email inbox (check Spam/Junk folder if not in Inbox).</li>
+            <li>Click the <strong>Verify Email</strong> button inside the email.</li>
+            <li>Once verified, sign in to access the campus marketplace.</li>
+          </ol>
+        </div>
+
+        <p className="error" style={{ fontSize: '0.85rem', background: '#fef2f2', padding: '10px 14px', borderRadius: '6px' }}>
+          ⚠️ You cannot proceed or sign in before verifying your university email.
         </p>
-        <div style={{ marginTop: '24px', display: 'flex', gap: '10px', justifyContent: 'center' }}>
-          <Link to="/" className="btn">Browse Marketplace</Link>
-          <Link to="/verify-email" className="btn ghost">Verification Help</Link>
+
+        {resendMsg && <p className="ok" style={{ marginTop: '14px' }}>{resendMsg}</p>}
+
+        <div style={{ marginTop: '24px', display: 'flex', gap: '12px', justifyContent: 'center' }}>
+          <Link to="/login" className="btn">Go to Sign In</Link>
+          <button
+            type="button"
+            className="btn ghost"
+            disabled={resending}
+            onClick={handleResend}
+          >
+            {resending ? 'Resending...' : 'Resend Email'}
+          </button>
         </div>
       </div>
     );
@@ -1268,10 +1445,13 @@ export function Register() {
         <input
           type="email"
           required
-          placeholder="e.g. rollnumber@university.edu"
+          placeholder="e.g. rollnumber@chitkara.edu.in"
           value={f.email}
           onChange={up('email')}
         />
+        <small className="muted" style={{ display: 'block', marginTop: '4px', fontSize: '0.78rem' }}>
+          Allowed campus domain: @chitkara.edu.in (or subdomains)
+        </small>
       </label>
 
       <div className="grid2">
