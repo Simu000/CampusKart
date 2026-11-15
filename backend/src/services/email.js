@@ -46,48 +46,10 @@ function getTransporter() {
   return null;
 }
 
-async function sendViaBrevo(to, subject, html) {
-  const sender = process.env.EMAIL_FROM || process.env.SMTP_USER;
-  const res = await fetch('https://api.brevo.com/v3/smtp/email', {
-    method: 'POST',
-    headers: {
-      'api-key': process.env.BREVO_API_KEY,
-      'content-type': 'application/json',
-      accept: 'application/json',
-    },
-    body: JSON.stringify({
-      sender: { name: process.env.APP_NAME || 'Campus Exchange', email: sender },
-      to: [{ email: to }],
-      subject,
-      htmlContent: html,
-    }),
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Brevo API ${res.status}: ${text.slice(0, 200)}`);
-  }
-  const data = await res.json().catch(() => ({}));
-  return data.messageId || 'brevo';
-}
-
 async function sendMail(to, subject, html) {
-  // Preferred: Brevo over HTTPS (works on hosts that block SMTP ports)
-  if (process.env.BREVO_API_KEY) {
-    try {
-      const id = await sendViaBrevo(to, subject, html);
-      console.log(`[EMAIL SERVICE] Email dispatched to ${to} via Brevo (${id})`);
-      return true;
-    } catch (err) {
-      console.error('[EMAIL SERVICE] Brevo dispatch error:', err.message);
-      return false;
-    }
-  }
-
-  // Fallback: SMTP (fine for local development)
   const transporter = getTransporter();
   if (!transporter) {
-    console.log(`[EMAIL SERVICE] No email provider configured. Email to ${to} not sent.`);
+    console.log(`[EMAIL SERVICE] No SMTP credentials configured. Email to ${to} skipped (logged above).`);
     return false;
   }
   try {
@@ -127,6 +89,15 @@ async function sendVerificationEmail(user) {
   const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
   const link = `${frontendUrl}/verify-email?token=${rawToken}`;
 
+  console.log(`
+================================================================================
+[EMAIL SERVICE] University Verification Link for: ${user.email}
+Student Name : ${user.full_name || user.fullName || 'Student'}
+Direct Link  : ${link}
+Expires in   : 24 Hours
+================================================================================
+`);
+
   const appName = process.env.APP_NAME || 'Campus Exchange';
   const sent = await sendMail(
     user.email,
@@ -138,7 +109,6 @@ async function sendVerificationEmail(user) {
      <p>This activation link expires in 24 hours.</p>`
   );
 
-  if (!sent) console.log(`[EMAIL SERVICE] Email not sent. Verification link for ${user.email}: ${link}`);
   return { token: rawToken, link, sent };
 }
 
@@ -162,6 +132,14 @@ async function sendPasswordResetEmail(user) {
   const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').split(',')[0].trim();
   const link = `${frontendUrl}/reset-password?token=${rawToken}`;
 
+  console.log(`
+================================================================================
+[EMAIL SERVICE] Password Reset Link for: ${user.email}
+Direct Link  : ${link}
+Expires in   : 2 Hours
+================================================================================
+`);
+
   const appName = process.env.APP_NAME || 'Campus Exchange';
   const sent = await sendMail(
     user.email,
@@ -174,7 +152,6 @@ async function sendPasswordResetEmail(user) {
      <p>This link is valid for 2 hours. If you did not request this, please disregard.</p>`
   );
 
-  if (!sent) console.log(`[EMAIL SERVICE] Email not sent. Reset link for ${user.email}: ${link}`);
   return { token: rawToken, link, sent };
 }
 
