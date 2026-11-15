@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api, conditionText, priceText } from './api';
 import { useAuth } from './auth.jsx';
 import ReportModal from './components/ReportModal.jsx';
@@ -896,8 +896,6 @@ export function Requests() {
         </div>
       )}
 
-  return (
-    <>
       <h1 style={{ marginTop: '20px' }}>Exchange Requests</h1>
       <div className="pills">
         <button
