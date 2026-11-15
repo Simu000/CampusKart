@@ -11,11 +11,12 @@ function hashToken(rawToken) {
 }
 
 function getTransporter() {
-  if (process.env.SMTP_SERVICE || (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)) {
+  const user = (process.env.SMTP_USER || process.env.EMAIL_FROM || '').trim();
+  const pass = (process.env.SMTP_PASS || '').replace(/\s+/g, '');
+
+  if (process.env.SMTP_SERVICE || (process.env.SMTP_HOST && user && pass)) {
     try {
       const nodemailer = require('nodemailer');
-      const user = (process.env.SMTP_USER || '').trim();
-      const pass = (process.env.SMTP_PASS || '').replace(/\s+/g, '');
 
       if (process.env.SMTP_SERVICE) {
         return nodemailer.createTransport({
@@ -52,8 +53,9 @@ async function sendMail(to, subject, html) {
     return false;
   }
   try {
+    const sender = process.env.EMAIL_FROM || process.env.SMTP_USER || 'noreply@campusexchange.edu';
     const info = await transporter.sendMail({
-      from: process.env.EMAIL_FROM || 'noreply@campusexchange.edu',
+      from: `"Campus Exchange" <${sender}>`,
       to,
       subject,
       html,
@@ -73,8 +75,8 @@ async function sendVerificationEmail(user) {
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
   try {
-    // Delete existing tokens for this user
-    await client.query('DELETE FROM email_verification_tokens WHERE user_id = $1', [user.id]);
+    // Clean up only expired tokens so students can use any recent link received in their inbox
+    await client.query('DELETE FROM email_verification_tokens WHERE user_id = $1 AND expires_at < NOW()', [user.id]);
 
     await client.query(
       'INSERT INTO email_verification_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
@@ -156,6 +158,7 @@ Expires in   : 2 Hours
 module.exports = {
   generateRawToken,
   hashToken,
+  sendMail,
   sendVerificationEmail,
   sendPasswordResetEmail,
 };

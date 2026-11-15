@@ -30,7 +30,7 @@ async function authenticate(req, res, next) {
     const userRes = await pool.query('SELECT id, status, role FROM users WHERE id = $1', [userId]);
     const user = userRes.rows[0];
 
-    if (!user || user.status !== 'ACTIVE') {
+    if (!user || user.status === 'SUSPENDED') {
       return res.status(401).json({
         success: false,
         message: user ? 'This account is suspended.' : 'User account no longer exists.',

@@ -1,4 +1,3 @@
-// controllers/reportController.js — Report & Block controllers
 const pool = require('../db/pool');
 const reportRepository = require('../repositories/reportRepository');
 const blockRepository = require('../repositories/blockRepository');
@@ -12,7 +11,6 @@ const {
   ConflictError,
 } = require('../middleware/errors');
 
-// ── POST /api/v1/reports ─────────────────────────────────────────────────────
 async function createReport(req, res, next) {
   try {
     const { reportedUserId, listingId, reason, description } = req.body;
@@ -53,7 +51,6 @@ async function createReport(req, res, next) {
   }
 }
 
-// ── GET /api/v1/admin/reports ─────────────────────────────────────────────────
 async function listReports(req, res, next) {
   try {
     const { status = '', page = '0', size = '20' } = req.query;
@@ -79,7 +76,6 @@ async function listReports(req, res, next) {
   }
 }
 
-// ── GET /api/v1/admin/reports/:id ─────────────────────────────────────────────
 async function getReport(req, res, next) {
   try {
     const report = await reportRepository.findById(req.params.id);
@@ -90,7 +86,6 @@ async function getReport(req, res, next) {
   }
 }
 
-// ── PATCH /api/v1/admin/reports/:id ───────────────────────────────────────────
 async function updateReport(req, res, next) {
   try {
     const { status, adminNotes } = req.body;
@@ -124,7 +119,6 @@ async function updateReport(req, res, next) {
   }
 }
 
-// ── POST /api/v1/users/:id/block ──────────────────────────────────────────────
 async function blockUser(req, res, next) {
   try {
     const targetId = parseInt(req.params.id, 10);
@@ -146,7 +140,6 @@ async function blockUser(req, res, next) {
   }
 }
 
-// ── DELETE /api/v1/users/:id/block ────────────────────────────────────────────
 async function unblockUser(req, res, next) {
   try {
     const targetId = parseInt(req.params.id, 10);
@@ -157,7 +150,6 @@ async function unblockUser(req, res, next) {
   }
 }
 
-// ── GET /api/v1/users/me/blocked ──────────────────────────────────────────────
 async function getBlockedList(req, res, next) {
   try {
     const list = await blockRepository.getBlockedList(req.userId);

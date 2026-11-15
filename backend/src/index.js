@@ -103,13 +103,14 @@ async function start() {
     const testConn = await pool.query('SELECT NOW()');
     console.log('✅ PostgreSQL connected successfully at:', testConn.rows[0].now);
 
-    // Automatically remove suspensions on all user accounts
-    const unsuspendRes = await pool.query("UPDATE users SET status = 'ACTIVE' WHERE status != 'ACTIVE'");
-    if (unsuspendRes.rowCount > 0) {
-      console.log(`✅ Lifted suspension on ${unsuspendRes.rowCount} user account(s). All accounts are now ACTIVE.`);
-    }
+    // Ensure default status and constraints
+    try {
+      await pool.query("ALTER TABLE users ALTER COLUMN status SET DEFAULT 'ACTIVE'");
+      await pool.query("ALTER TABLE item_requests ALTER COLUMN status SET DEFAULT 'PENDING'");
+      await pool.query("ALTER TABLE listings DROP CONSTRAINT IF EXISTS listings_qty_total_check; ALTER TABLE listings ADD CONSTRAINT listings_qty_total_check CHECK (qty_total >= 0);");
+    } catch (_) {}
   } catch (err) {
-    console.warn('⚠️ PostgreSQL connection failed on startup:', err.message);
+    console.warn('PostgreSQL connection failed on startup:', err.message);
     console.warn('   Please check your DB_HOST, DB_NAME, DB_USER, and DB_PASSWORD in .env');
     console.warn('   and run "npm run db:migrate" once the database is online.');
   }
@@ -119,7 +120,7 @@ async function start() {
 
   const server = app.listen(PORT, () => {
     console.log(`
-🎓 Campus Exchange API (Node.js) is running!
+Campus Exchange API (Node.js) is running!
    Listening on : http://localhost:${PORT}
    API Base     : http://localhost:${PORT}/api/v1
    Static Files : http://localhost:${PORT}/uploads

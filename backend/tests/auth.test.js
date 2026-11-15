@@ -10,6 +10,7 @@ describe('Authentication & User Management APIs', () => {
     for (const id of createdUserIds) {
       await cleanupUser(id);
     }
+    await pool.end();
   });
 
   test('POST /api/v1/auth/register — Succeeds with approved university email domain (does not expose verification link)', async () => {

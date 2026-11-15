@@ -128,8 +128,8 @@ router.post('/', authenticate, async (req, res, next) => {
     const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000);
 
     const insertResult = await pool.query(
-      `INSERT INTO item_requests (listing_id, buyer_id, seller_id, quantity, note, expires_at)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO item_requests (listing_id, buyer_id, seller_id, quantity, note, status, expires_at)
+       VALUES ($1, $2, $3, $4, $5, 'PENDING', $6)
        RETURNING *`,
       [listing.id, req.userId, listing.seller_id, qty, note ? String(note).trim() : null, expiresAt]
     );
@@ -259,14 +259,6 @@ router.patch('/:id/accept', authenticate, async (req, res, next) => {
        WHERE id = $1
        RETURNING *`,
       [itemReq.id]
-    );
-
-    // Ensure conversation record exists in PostgreSQL
-    await client.query(
-      `INSERT INTO conversations (request_id, buyer_id, seller_id)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (request_id) DO NOTHING`,
-      [itemReq.id, itemReq.buyer_id, itemReq.seller_id]
     );
 
     // Sync active conversation to MongoDB
@@ -592,7 +584,7 @@ router.get('/:requestId/messages', authenticate, async (req, res, next) => {
       });
     }
 
-    // Query messages from MongoDB if connected, otherwise fallback to PostgreSQL
+    // Query messages from MongoDB
     if (mongoose.connection.readyState === 1) {
       const msgs = await Message.find({ requestId: Number(req.params.requestId) })
         .sort({ createdAt: 1 })
@@ -611,27 +603,9 @@ router.get('/:requestId/messages', authenticate, async (req, res, next) => {
       });
     }
 
-    const msgs = await pool.query(
-      `SELECT m.*, u.full_name AS sender_name
-       FROM messages m
-       LEFT JOIN users u ON u.id = m.sender_id
-       WHERE m.request_id = $1
-       ORDER BY m.created_at ASC`,
-      [req.params.requestId]
-    );
-
-    const data = msgs.rows.map(m => ({
-      id: Number(m.id),
-      requestId: Number(m.request_id),
-      senderId: Number(m.sender_id),
-      senderName: m.sender_name || 'Student',
-      body: m.body,
-      createdAt: m.created_at,
-    }));
-
-    res.json({
-      success: true,
-      data,
+    return res.status(503).json({
+      success: false,
+      message: 'Private messaging is currently unavailable because MongoDB is not connected. Please configure MONGO_URI in backend/.env',
     });
   } catch (err) {
     next(err);
@@ -676,72 +650,55 @@ router.post('/:requestId/messages', authenticate, async (req, res, next) => {
     const senderRes = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.userId]);
     const senderName = senderRes.rows[0]?.full_name || 'Student';
 
-    // Store in MongoDB if connected
-    if (mongoose.connection.readyState === 1) {
-      const newMsg = await Message.create({
-        requestId: Number(req.params.requestId),
-        senderId: req.userId,
-        senderName,
-        body: trimmedBody,
-      });
-
-      // Update Conversation record in MongoDB
-      const listingRes = await pool.query('SELECT title FROM listings WHERE id = $1', [
-        itemReq.listing_id,
-      ]);
-      const listingTitle = listingRes.rows[0]?.title || '';
-
-      await Conversation.findOneAndUpdate(
-        { requestId: Number(req.params.requestId) },
-        {
-          $set: {
-            listingId: Number(itemReq.listing_id),
-            listingTitle,
-            buyerId: Number(itemReq.buyer_id),
-            sellerId: Number(itemReq.seller_id),
-            lastMessage: trimmedBody.substring(0, 100),
-            lastMessageAt: new Date(),
-          },
-          $setOnInsert: {
-            createdAt: new Date(),
-          },
-        },
-        { upsert: true }
-      );
-
-      return res.status(201).json({
-        success: true,
-        message: 'Message sent',
-        data: {
-          id: newMsg._id.toString(),
-          requestId: Number(newMsg.requestId),
-          senderId: Number(newMsg.senderId),
-          senderName: newMsg.senderName,
-          body: newMsg.body,
-          createdAt: newMsg.createdAt,
-        },
+    // Store in MongoDB
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Private messaging is currently unavailable because MongoDB is not connected. Please configure MONGO_URI in backend/.env',
       });
     }
 
-    // Fallback to PostgreSQL
-    const insertResult = await pool.query(
-      `INSERT INTO messages (request_id, sender_id, body)
-       VALUES ($1, $2, $3)
-       RETURNING *`,
-      [req.params.requestId, req.userId, trimmedBody]
+    const newMsg = await Message.create({
+      requestId: Number(req.params.requestId),
+      senderId: req.userId,
+      senderName,
+      body: trimmedBody,
+    });
+
+    // Update Conversation record in MongoDB
+    const listingRes = await pool.query('SELECT title FROM listings WHERE id = $1', [
+      itemReq.listing_id,
+    ]);
+    const listingTitle = listingRes.rows[0]?.title || '';
+
+    await Conversation.findOneAndUpdate(
+      { requestId: Number(req.params.requestId) },
+      {
+        $set: {
+          listingId: Number(itemReq.listing_id),
+          listingTitle,
+          buyerId: Number(itemReq.buyer_id),
+          sellerId: Number(itemReq.seller_id),
+          lastMessage: trimmedBody.substring(0, 100),
+          lastMessageAt: new Date(),
+        },
+        $setOnInsert: {
+          createdAt: new Date(),
+        },
+      },
+      { upsert: true }
     );
-    const msg = insertResult.rows[0];
 
     res.status(201).json({
       success: true,
       message: 'Message sent',
       data: {
-        id: Number(msg.id),
-        requestId: Number(msg.request_id),
-        senderId: Number(msg.sender_id),
-        senderName,
-        body: msg.body,
-        createdAt: msg.created_at,
+        id: newMsg._id.toString(),
+        requestId: Number(newMsg.requestId),
+        senderId: Number(newMsg.senderId),
+        senderName: newMsg.senderName,
+        body: newMsg.body,
+        createdAt: newMsg.createdAt,
       },
     });
   } catch (err) {

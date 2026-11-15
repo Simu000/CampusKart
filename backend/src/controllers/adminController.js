@@ -1,4 +1,3 @@
-// controllers/adminController.js — Admin dashboard & management
 const pool = require('../db/pool');
 const userRepository = require('../repositories/userRepository');
 const listingRepository = require('../repositories/listingRepository');
@@ -13,7 +12,6 @@ const {
   ConflictError,
 } = require('../middleware/errors');
 
-// ── GET /api/v1/admin/dashboard ───────────────────────────────────────────────
 async function getDashboard(req, res, next) {
   try {
     const [
@@ -48,7 +46,6 @@ async function getDashboard(req, res, next) {
   }
 }
 
-// ── GET /api/v1/admin/users ───────────────────────────────────────────────────
 async function listUsers(req, res, next) {
   try {
     const { search = '', page = '0', size = '20' } = req.query;
@@ -74,7 +71,6 @@ async function listUsers(req, res, next) {
   }
 }
 
-// ── PATCH /api/v1/admin/users/:id/suspend ─────────────────────────────────────
 async function suspendUser(req, res, next) {
   try {
     const targetId = parseInt(req.params.id, 10);
@@ -114,7 +110,6 @@ async function suspendUser(req, res, next) {
   }
 }
 
-// ── PATCH /api/v1/admin/users/:id/reactivate ──────────────────────────────────
 async function reactivateUser(req, res, next) {
   try {
     const targetId = parseInt(req.params.id, 10);
@@ -150,7 +145,6 @@ async function reactivateUser(req, res, next) {
   }
 }
 
-// ── GET /api/v1/admin/listings ────────────────────────────────────────────────
 async function listListings(req, res, next) {
   try {
     const { search = '', page = '0', size = '20' } = req.query;
@@ -173,7 +167,6 @@ async function listListings(req, res, next) {
   }
 }
 
-// ── DELETE /api/v1/admin/listings/:id ─────────────────────────────────────────
 async function removeListing(req, res, next) {
   try {
     const listingId = parseInt(req.params.id, 10);
@@ -209,7 +202,6 @@ async function removeListing(req, res, next) {
   }
 }
 
-// ── GET /api/v1/admin/categories ──────────────────────────────────────────────
 async function listCategories(req, res, next) {
   try {
     const cats = await categoryRepository.findAll(false); // all, including inactive
@@ -219,7 +211,6 @@ async function listCategories(req, res, next) {
   }
 }
 
-// ── POST /api/v1/admin/categories ─────────────────────────────────────────────
 async function createCategory(req, res, next) {
   try {
     const { name, slug, description, imageUrl, displayOrder } = req.body;
@@ -244,7 +235,6 @@ async function createCategory(req, res, next) {
   }
 }
 
-// ── PUT /api/v1/admin/categories/:id ──────────────────────────────────────────
 async function updateCategory(req, res, next) {
   try {
     const { name, slug, description, imageUrl, displayOrder } = req.body;
@@ -263,7 +253,6 @@ async function updateCategory(req, res, next) {
   }
 }
 
-// ── PATCH /api/v1/admin/categories/:id/toggle ─────────────────────────────────
 async function toggleCategory(req, res, next) {
   try {
     const existing = await categoryRepository.findById(req.params.id);
@@ -281,7 +270,6 @@ async function toggleCategory(req, res, next) {
   }
 }
 
-// ── GET /api/v1/admin/audit-logs ──────────────────────────────────────────────
 async function getAuditLogs(req, res, next) {
   try {
     const { page = '0', size = '50' } = req.query;

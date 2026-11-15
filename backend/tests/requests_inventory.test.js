@@ -37,6 +37,7 @@ describe('Request Workflow, Stock Concurrency & Mutual Confirmation', () => {
     await cleanupUser(seller.user.id);
     await cleanupUser(buyerA.user.id);
     await cleanupUser(buyerB.user.id);
+    await pool.end();
   });
 
   test('POST /api/v1/requests — Prevents seller from requesting their own item', async () => {

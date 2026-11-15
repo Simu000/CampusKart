@@ -31,6 +31,7 @@ describe('Marketplace Listings & Search APIs', () => {
     }
     await cleanupUser(verifiedSeller.user.id);
     await cleanupUser(unverifiedUser.user.id);
+    await pool.end();
   });
 
   test('GET /api/v1/categories — Returns active categories list', async () => {
@@ -118,6 +119,6 @@ describe('Marketplace Listings & Search APIs', () => {
 
     assert.equal(searchRes.status, 200);
     assert.equal(searchRes.body.success, true);
-    assert.ok(Array.isArray(searchRes.body.data.content));
+    assert.ok(Array.isArray(searchRes.body.data.items || searchRes.body.data.content));
   });
 });

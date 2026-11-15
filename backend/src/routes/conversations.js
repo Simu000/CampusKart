@@ -116,25 +116,9 @@ router.get('/:requestId/messages', authenticate, async (req, res, next) => {
       });
     }
 
-    const pgMsgs = await pool.query(
-      `SELECT m.*, u.full_name AS sender_name
-       FROM messages m
-       LEFT JOIN users u ON u.id = m.sender_id
-       WHERE m.request_id = $1
-       ORDER BY m.created_at ASC`,
-      [requestId]
-    );
-
-    res.json({
-      success: true,
-      data: pgMsgs.rows.map(m => ({
-        id: Number(m.id),
-        requestId: Number(m.request_id),
-        senderId: Number(m.sender_id),
-        senderName: m.sender_name || 'Student',
-        body: m.body,
-        createdAt: m.created_at,
-      })),
+    return res.status(503).json({
+      success: false,
+      message: 'Private messaging is currently unavailable because MongoDB is not connected. Please configure MONGO_URI in backend/.env',
     });
   } catch (err) {
     next(err);
@@ -179,72 +163,55 @@ router.post('/:requestId/messages', authenticate, async (req, res, next) => {
     const senderRes = await pool.query('SELECT full_name FROM users WHERE id = $1', [req.userId]);
     const senderName = senderRes.rows[0]?.full_name || 'Student';
 
-    if (mongoose.connection.readyState === 1) {
-      const newMsg = await Message.create({
-        requestId,
-        senderId: req.userId,
-        senderName,
-        body: trimmedBody,
-      });
-
-      // Fetch listing title for the conversation summary
-      const listingRes = await pool.query('SELECT title FROM listings WHERE id = $1', [
-        itemReq.listing_id,
-      ]);
-      const listingTitle = listingRes.rows[0]?.title || '';
-
-      // Update or insert conversation record in MongoDB
-      await Conversation.findOneAndUpdate(
-        { requestId },
-        {
-          $set: {
-            listingId: Number(itemReq.listing_id),
-            listingTitle,
-            buyerId: Number(itemReq.buyer_id),
-            sellerId: Number(itemReq.seller_id),
-            lastMessage: trimmedBody.substring(0, 100),
-            lastMessageAt: new Date(),
-          },
-          $setOnInsert: {
-            createdAt: new Date(),
-          },
-        },
-        { upsert: true }
-      );
-
-      return res.status(201).json({
-        success: true,
-        message: 'Message sent',
-        data: {
-          id: newMsg._id.toString(),
-          requestId: newMsg.requestId,
-          senderId: newMsg.senderId,
-          senderName: newMsg.senderName,
-          body: newMsg.body,
-          createdAt: newMsg.createdAt,
-        },
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        success: false,
+        message: 'Private messaging is currently unavailable because MongoDB is not connected. Please configure MONGO_URI in backend/.env',
       });
     }
 
-    // Fallback to PostgreSQL
-    const insertResult = await pool.query(
-      `INSERT INTO messages (request_id, sender_id, body)
-       VALUES ($1, $2, $3)
-       RETURNING *`,
-      [requestId, req.userId, trimmedBody]
+    const newMsg = await Message.create({
+      requestId,
+      senderId: req.userId,
+      senderName,
+      body: trimmedBody,
+    });
+
+    // Fetch listing title for the conversation summary
+    const listingRes = await pool.query('SELECT title FROM listings WHERE id = $1', [
+      itemReq.listing_id,
+    ]);
+    const listingTitle = listingRes.rows[0]?.title || '';
+
+    // Update or insert conversation record in MongoDB
+    await Conversation.findOneAndUpdate(
+      { requestId },
+      {
+        $set: {
+          listingId: Number(itemReq.listing_id),
+          listingTitle,
+          buyerId: Number(itemReq.buyer_id),
+          sellerId: Number(itemReq.seller_id),
+          lastMessage: trimmedBody.substring(0, 100),
+          lastMessageAt: new Date(),
+        },
+        $setOnInsert: {
+          createdAt: new Date(),
+        },
+      },
+      { upsert: true }
     );
-    const msg = insertResult.rows[0];
 
     res.status(201).json({
       success: true,
       message: 'Message sent',
       data: {
-        id: Number(msg.id),
-        requestId: Number(msg.request_id),
-        senderId: Number(msg.sender_id),
-        senderName,
-        body: msg.body,
-        createdAt: msg.created_at,
+        id: newMsg._id.toString(),
+        requestId: newMsg.requestId,
+        senderId: newMsg.senderId,
+        senderName: newMsg.senderName,
+        body: newMsg.body,
+        createdAt: newMsg.createdAt,
       },
     });
   } catch (err) {

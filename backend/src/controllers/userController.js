@@ -1,4 +1,3 @@
-// controllers/userController.js — User profile management
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
@@ -9,7 +8,6 @@ const { toUserSummaryDto, toPublicProfileDto } = require('../dtos/userDto');
 const { toListingDto } = require('../dtos/listingDto');
 const { NotFoundError, BadRequestError } = require('../middleware/errors');
 
-// ── Multer for profile photo uploads ─────────────────────────────────────────
 const uploadsDir = path.resolve(process.env.UPLOADS_DIR || 'uploads', 'profiles');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
@@ -32,7 +30,6 @@ const uploadProfilePhoto = multer({
   },
 }).single('photo');
 
-// ── GET /api/v1/users/me ──────────────────────────────────────────────────────
 async function getMe(req, res, next) {
   try {
     const user = await userRepository.findById(req.userId);
@@ -43,7 +40,6 @@ async function getMe(req, res, next) {
   }
 }
 
-// ── PUT /api/v1/users/me ──────────────────────────────────────────────────────
 async function updateMe(req, res, next) {
   // Wrap multer inside controller to handle both JSON and multipart
   uploadProfilePhoto(req, res, async (uploadErr) => {
@@ -77,7 +73,6 @@ async function updateMe(req, res, next) {
   });
 }
 
-// ── GET /api/v1/users/:id/public-profile ──────────────────────────────────────
 async function getPublicProfile(req, res, next) {
   try {
     const user = await userRepository.findById(req.params.id);

@@ -1,7 +1,3 @@
--- =============================================================================
--- Campus Exchange — PostgreSQL Database Schema
--- Matches Spring Boot V1__initial_schema.sql
--- =============================================================================
 
 -- 1. USERS
 CREATE TABLE IF NOT EXISTS users (
@@ -66,7 +62,7 @@ CREATE TABLE IF NOT EXISTS listings (
     description TEXT NOT NULL,
     item_condition VARCHAR(20) NOT NULL,
     transaction_type VARCHAR(20) NOT NULL,
-    qty_total INT NOT NULL CHECK (qty_total > 0),
+    qty_total INT NOT NULL CHECK (qty_total >= 0),
     qty_available INT NOT NULL CHECK (qty_available >= 0),
     qty_reserved INT NOT NULL DEFAULT 0 CHECK (qty_reserved >= 0),
     price NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
@@ -111,28 +107,9 @@ CREATE INDEX IF NOT EXISTS idx_requests_buyer ON item_requests(buyer_id, status)
 CREATE INDEX IF NOT EXISTS idx_requests_seller ON item_requests(seller_id, status);
 CREATE INDEX IF NOT EXISTS idx_requests_listing ON item_requests(listing_id, status);
 
--- 8. CONVERSATIONS
-CREATE TABLE IF NOT EXISTS conversations (
-    id BIGSERIAL PRIMARY KEY,
-    request_id BIGINT NOT NULL UNIQUE REFERENCES item_requests(id) ON DELETE CASCADE,
-    buyer_id BIGINT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-    seller_id BIGINT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_conv_participants ON conversations(buyer_id, seller_id);
+-- Note: Private chat messages and conversations are managed via MongoDB (Message and Conversation collections)
 
--- 9. MESSAGES
-CREATE TABLE IF NOT EXISTS messages (
-    id BIGSERIAL PRIMARY KEY,
-    request_id BIGINT NOT NULL REFERENCES item_requests(id) ON DELETE CASCADE,
-    sender_id BIGINT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
-    body VARCHAR(2000) NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_messages_req ON messages(request_id, created_at ASC);
-
--- 10. BLOCKED USERS
+-- 8. BLOCKED USERS
 CREATE TABLE IF NOT EXISTS blocked_users (
     id BIGSERIAL PRIMARY KEY,
     blocker_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

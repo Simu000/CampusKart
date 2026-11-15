@@ -61,8 +61,8 @@ router.post('/register', async (req, res, next) => {
     const passwordHash = await bcrypt.hash(password, 12);
 
     const userResult = await pool.query(
-      `INSERT INTO users (full_name, email, password_hash, department, course, study_year, verified)
-       VALUES ($1, $2, $3, $4, $5, $6, FALSE)
+      `INSERT INTO users (full_name, email, password_hash, department, course, study_year, verified, status)
+       VALUES ($1, $2, $3, $4, $5, $6, FALSE, 'ACTIVE')
        RETURNING *`,
       [
         fullName.trim(),
@@ -114,7 +114,7 @@ router.post('/login', async (req, res, next) => {
       });
     }
 
-    if (user.status !== 'ACTIVE') {
+    if (user.status === 'SUSPENDED') {
       throw new UnauthorizedError('This account is currently suspended. Please contact campus support.');
     }
 
@@ -143,44 +143,65 @@ router.post('/login', async (req, res, next) => {
   }
 });
 
-// ── GET /api/v1/auth/verify-email?token=xyz ──────────────────────────────────
-router.get('/verify-email', async (req, res, next) => {
+// ── GET & POST /api/v1/auth/verify-email ─────────────────────────────────────
+async function handleVerifyEmail(req, res, next) {
   try {
-    const rawToken = req.query.token;
-    if (!rawToken || !rawToken.trim()) {
+    const rawToken = req.query.token || req.body?.token;
+    if (!rawToken || !String(rawToken).trim()) {
       throw new BadRequestError('Verification token is required');
     }
 
-    const tokenHash = hashToken(rawToken.trim());
+    const tokenHash = hashToken(String(rawToken).trim());
     const tokenResult = await pool.query(
-      'SELECT * FROM email_verification_tokens WHERE token_hash = $1',
+      `SELECT t.*, u.verified, u.id AS u_id, u.email, u.full_name, u.role, u.department, u.course, u.study_year, u.status
+       FROM email_verification_tokens t
+       JOIN users u ON u.id = t.user_id
+       WHERE t.token_hash = $1`,
       [tokenHash]
     );
-    const tokenRow = tokenResult.rows[0];
+    const row = tokenResult.rows[0];
 
-    if (!tokenRow) {
-      throw new BadRequestError('Invalid or unrecognized verification token');
+    if (!row) {
+      throw new BadRequestError('Invalid or unrecognized verification token. If you requested a new link, please check your latest email.');
     }
 
-    if (tokenRow.used_at) {
-      throw new BadRequestError('This verification link has already been used');
+    // If user is already verified (e.g. from previous click, email pre-fetch scanner, or React StrictMode)
+    if (row.verified) {
+      const user = {
+        id: row.u_id,
+        email: row.email,
+        full_name: row.full_name,
+        role: row.role,
+        department: row.department,
+        course: row.course,
+        study_year: row.study_year,
+        status: row.status || 'ACTIVE',
+        verified: true,
+      };
+      const token = generateToken(user.id);
+      attachAuthCookie(res, token);
+
+      return res.json({
+        success: true,
+        message: 'Your university email is verified! You now have full access to Campus Exchange.',
+        data: {
+          ...toUserSummaryDto(user),
+          token,
+        },
+      });
     }
 
-    if (new Date(tokenRow.expires_at) < new Date()) {
-      throw new BadRequestError('This verification link has expired. Please request a new verification link.');
+    if (new Date(row.expires_at) < new Date()) {
+      throw new BadRequestError('This verification link has expired. Please request a new verification link below.');
     }
 
     const userResult = await pool.query(
-      'UPDATE users SET verified = TRUE, updated_at = NOW() WHERE id = $1 RETURNING *',
-      [tokenRow.user_id]
+      "UPDATE users SET verified = TRUE, status = 'ACTIVE', updated_at = NOW() WHERE id = $1 RETURNING *",
+      [row.user_id]
     );
     const user = userResult.rows[0];
 
-    if (!user) {
-      throw new BadRequestError('Associated student account not found');
-    }
-
-    await pool.query('UPDATE email_verification_tokens SET used_at = NOW() WHERE id = $1', [tokenRow.id]);
+    await pool.query('UPDATE email_verification_tokens SET used_at = NOW() WHERE id = $1', [row.id]);
 
     const token = generateToken(user.id);
     attachAuthCookie(res, token);
@@ -196,7 +217,10 @@ router.get('/verify-email', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
-});
+}
+
+router.get('/verify-email', handleVerifyEmail);
+router.post('/verify-email', handleVerifyEmail);
 
 // ── POST /api/v1/auth/resend-verification ─────────────────────────────────────
 router.post('/resend-verification', async (req, res, next) => {
