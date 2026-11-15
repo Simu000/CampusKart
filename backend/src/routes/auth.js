@@ -77,11 +77,10 @@ router.post('/register', async (req, res, next) => {
     const newUser = userResult.rows[0];
 
     // Dispatch verification email to student's inbox
-    try {
-      await sendVerificationEmail(newUser);
-    } catch (err) {
-      console.error('[AUTH] Failed to dispatch verification email on register:', err.message);
-    }
+    // Fire-and-forget: never make the student wait on the email provider
+    sendVerificationEmail(newUser).catch((err) =>
+      console.error('[AUTH] Failed to dispatch verification email on register:', err.message)
+    );
 
     res.status(201).json({
       success: true,
@@ -236,11 +235,9 @@ router.post('/resend-verification', async (req, res, next) => {
 
     // Resend if user exists and is not verified yet
     if (user && !user.verified) {
-      try {
-        await sendVerificationEmail(user);
-      } catch (err) {
-        console.error('[AUTH] Resend verification failed:', err.message);
-      }
+      sendVerificationEmail(user).catch((err) =>
+        console.error('[AUTH] Resend verification failed:', err.message)
+      );
     }
 
     res.json({
@@ -266,11 +263,9 @@ router.post('/forgot-password', async (req, res, next) => {
     const user = result.rows[0];
 
     if (user) {
-      try {
-        await sendPasswordResetEmail(user);
-      } catch (err) {
-        console.error('[AUTH] Forgot password email failed:', err.message);
-      }
+      sendPasswordResetEmail(user).catch((err) =>
+        console.error('[AUTH] Forgot password email failed:', err.message)
+      );
     }
 
     res.json({
