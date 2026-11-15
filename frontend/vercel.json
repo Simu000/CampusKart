@@ -1,0 +1,7 @@
+{
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://campus-exchange-api-8v92.onrender.com/api/:path*" },
+    { "source": "/uploads/:path*", "destination": "https://campus-exchange-api-8v92.onrender.com/uploads/:path*" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
