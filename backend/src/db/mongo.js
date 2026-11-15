@@ -4,6 +4,15 @@ const mongoose = require('mongoose');
 
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/campus_exchange';
 
+// Never log credentials: show only the host part of the URI
+function safeHost(uri) {
+  try {
+    return new URL(uri).host;
+  } catch {
+    return 'unknown host';
+  }
+}
+
 let isConnected = false;
 
 async function connectMongo() {
@@ -15,10 +24,10 @@ async function connectMongo() {
       serverSelectionTimeoutMS: 5000,
     });
     isConnected = true;
-    console.log('✅ MongoDB connected successfully for Private Chat & Messaging at:', MONGO_URI);
+    console.log(`✅ MongoDB connected successfully for Private Chat & Messaging (${safeHost(MONGO_URI)})`);
   } catch (err) {
     console.warn('⚠️  MongoDB connection warning:', err.message);
-    console.warn(`   Target URI: ${MONGO_URI}`);
+    console.warn(`   Target host: ${safeHost(MONGO_URI)}`);
     console.warn('   To enable MongoDB for private messaging:');
     console.warn('   1. Ensure mongod is running locally (default: mongodb://localhost:27017/campus_exchange)');
     console.warn('      OR provide a MongoDB Atlas cloud URI in your backend/.env (MONGO_URI=...)');
