@@ -1,12 +1,20 @@
-// components/NotificationBell.jsx — In-app notification dropdown
+// components/NotificationBell.jsx — In-app notification dropdown with SVG icon
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 
+function BellIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+      <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+    </svg>
+  );
+}
+
 export default function NotificationBell() {
   const [data, setData] = useState({ items: [], unreadCount: 0 });
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
   const ref = useRef(null);
   const nav = useNavigate();
 
@@ -38,10 +46,12 @@ export default function NotificationBell() {
       try { await api(`/notifications/${n.id}/read`, { method: 'PATCH' }); } catch (_) {}
     }
     setOpen(false);
-    // Navigate to relevant resource
-    if (n.reference_type === 'REQUEST') nav(`/requests`);
-    else if (n.reference_type === 'LISTING') nav(`/my-listings`);
-    else if (n.reference_type === 'USER') nav(`/profile/me`);
+    // Navigate to relevant resource — message notifications go to inbox
+    if (n.reference_type === 'MESSAGE' || n.reference_type === 'CONVERSATION') nav('/messages');
+    else if (n.reference_type === 'REQUEST') nav('/requests');
+    else if (n.reference_type === 'LISTING') nav('/my-listings');
+    else if (n.reference_type === 'USER') nav('/profile/me');
+    else nav('/messages'); // default: inbox
     load();
   };
 
@@ -61,8 +71,9 @@ export default function NotificationBell() {
         className="notif-btn"
         onClick={() => setOpen(o => !o)}
         aria-label={`${unread} notifications`}
+        title="Notifications"
       >
-        🔔
+        <BellIcon />
         {unread > 0 && <span className="notif-badge">{unread > 99 ? '99+' : unread}</span>}
       </button>
       {open && (

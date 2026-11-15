@@ -95,7 +95,11 @@ export function Browse() {
         <h1>Find what you need. Sell what you don't.</h1>
         <p>Buy, sell, rent, and borrow essentials securely within your campus.</p>
         <div className="search-bar-wrap">
-          <span className="search-icon">🔍</span>
+          <span className="search-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+        </span>
           <input
             placeholder="Search Arduino, calculators, lab coats, textbooks..."
             value={f.q}
@@ -349,8 +353,8 @@ export function ListingDetail() {
           <form className="req-form" onSubmit={send}>
             <h3>Request This Item</h3>
             {isUnverified && (
-              <p className="error" style={{ background: '#fef2f2', padding: '8px 12px', borderRadius: '6px' }}>
-                ⚠️ You must verify your university email before you can request items. Check your inbox for the link.
+              <p className="error" style={{ background: 'var(--danger-bg)', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--danger)' }}>
+                You must verify your university email before you can request items. Check your inbox for the verification link.
               </p>
             )}
             <label>
@@ -396,7 +400,7 @@ export function ListingDetail() {
               style={{ fontSize: '0.82rem', color: 'var(--ink-400)' }}
               onClick={() => setShowReport(true)}
             >
-              🚩 Report this listing
+              Report this listing
             </button>
           </div>
         )}
@@ -610,7 +614,7 @@ export function Sell() {
       <div>
         <label>Upload Photos (Up to 5 images)</label>
         <div className="upload-zone" onClick={() => fileInputRef.current?.click()}>
-          <p style={{ fontWeight: 600, color: 'var(--ink-700)' }}>📷 Click to upload photo files</p>
+          <p style={{ fontWeight: 600, color: 'var(--ink-700)' }}>Click to upload photo files</p>
           <p className="muted" style={{ fontSize: '0.8rem' }}>Supports JPG, PNG, WEBP up to 5MB each</p>
           <input
             type="file"
@@ -718,7 +722,7 @@ export function PublicProfile() {
         <div className="profile-info">
           <h1>{profile.fullName}</h1>
           <div className="profile-meta">
-            {profile.verified && <span className="badge-verified">✓ Verified Campus Member</span>}
+          {profile.verified && <span style={{ fontSize: '0.82rem', color: 'var(--brand-600)', fontWeight: 600 }}>Verified Campus Member</span>}
             {profile.department && <span>Department: <strong>{profile.department}</strong></span>}
             {profile.studyYear && <span>{profile.studyYear}</span>}
             <span>Member since: {joinedYear}</span>
@@ -840,6 +844,7 @@ export function Requests() {
   const [sent, setSent] = useState(null);
   const [recv, setRecv] = useState(null);
   const [error, setError] = useState('');
+  const [confirmModal, setConfirmModal] = useState(null); // { requestId, action, label }
 
   const load = () => {
     api('/requests/sent').then(setSent).catch((e) => setError(e.message));
@@ -856,7 +861,40 @@ export function Requests() {
     }
   };
 
+  const handleConfirmCompletion = (requestId, transactionType) => {
+    const label = transactionType === 'SELL' ? 'hand over the item to the buyer' : 'return/receive the item from your classmate';
+    setConfirmModal({ requestId, action: 'confirm-completion', label });
+  };
+
   const rows = tab === 'received' ? recv : sent;
+
+  return (
+    <>
+      {confirmModal && (
+        <div className="modal-backdrop" onClick={() => setConfirmModal(null)}>
+          <div className="modal confirm-modal-box" onClick={e => e.stopPropagation()}>
+            <h3>Confirm Exchange Completion</h3>
+            <p>
+              Please only confirm if you have already physically <strong>{confirmModal.label}</strong>.
+            </p>
+            <div className="confirm-modal-warning">
+              Once marked complete, this chat will be permanently closed and you will no longer be able to send messages.
+            </div>
+            <div className="confirm-modal-actions">
+              <button className="btn ghost" onClick={() => setConfirmModal(null)}>Cancel</button>
+              <button
+                className="btn"
+                onClick={() => {
+                  act(confirmModal.requestId, confirmModal.action);
+                  setConfirmModal(null);
+                }}
+              >
+                Yes, exchange is complete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
   return (
     <>
@@ -909,7 +947,7 @@ export function Requests() {
                       </span>
                     )}
                     {r.canConfirm && (
-                      <button className="btn" onClick={() => act(r.id, 'confirm-completion')}>
+                      <button className="btn" onClick={() => handleConfirmCompletion(r.id, r.transactionType)}>
                         {r.transactionType === 'SELL' ? 'Confirm Exchange' : 'Confirm Return'}
                       </button>
                     )}
@@ -990,7 +1028,7 @@ export function Chat() {
             style={{ fontSize: '0.82rem', color: 'var(--danger)' }}
             onClick={() => setShowReport(true)}
           >
-            🚩 Report Student
+            Report Student
           </button>
         )}
       </div>
@@ -1049,10 +1087,13 @@ export function VerifyEmail() {
   const [message, setMessage] = useState('');
   const [resendEmail, setResendEmail] = useState('');
   const [resendStatus, setResendStatus] = useState('');
+  const verifyingRef = useRef(false);
 
   useEffect(() => {
-    if (!token) return;
-    api('/auth/verify-email?token=' + token)
+    if (!token || verifyingRef.current) return;
+    verifyingRef.current = true;
+
+    api('/auth/verify-email?token=' + encodeURIComponent(token))
       .then((data) => {
         if (data?.token) {
           localStorage.setItem('token', data.token);
@@ -1092,7 +1133,11 @@ export function VerifyEmail() {
 
       {status === 'success' && (
         <>
-          <div style={{ fontSize: '3rem', color: 'var(--brand-600)' }}>✓</div>
+          <div style={{ width: 56, height: 56, background: 'var(--brand-50)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', border: '2px solid var(--brand-600)' }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--brand-600)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
           <h2>Account Verified!</h2>
           <p className="ok">{message}</p>
           <p className="muted">You now have complete access to buy, sell, rent, and lend on Campus Exchange.</p>
@@ -1256,7 +1301,7 @@ export function Login() {
   const [loading, setLoading] = useState(false);
 
   if (user) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/browse" replace />;
   }
 
   const submit = async (e) => {
@@ -1265,7 +1310,7 @@ export function Login() {
     setLoading(true);
     try {
       await login(f.email, f.password);
-      nav('/');
+      nav('/browse');
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1348,7 +1393,7 @@ export function Register() {
   const [resendMsg, setResendMsg] = useState('');
 
   if (user) {
-    return <Navigate to="/" replace />;
+    return <Navigate to="/browse" replace />;
   }
 
   const submit = async (e) => {
@@ -1392,7 +1437,12 @@ export function Register() {
   if (registeredEmail) {
     return (
       <div className="form narrow" style={{ textAlign: 'center', margin: '40px auto' }}>
-        <div style={{ fontSize: '3.5rem', marginBottom: '8px' }}>📬</div>
+        <div style={{ width: 48, height: 48, background: 'var(--brand-50)', borderRadius: 'var(--radius-full)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', border: '2px solid var(--brand-600)' }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--brand-600)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+            <polyline points="22,6 12,13 2,6"/>
+          </svg>
+        </div>
         <h2>Verify Your University Email</h2>
         <p style={{ margin: '14px 0', fontSize: '1.05rem', color: '#1e293b' }}>
           We have sent a verification link to <strong>{registeredEmail}</strong>.
@@ -1409,8 +1459,8 @@ export function Register() {
           </ol>
         </div>
 
-        <p className="error" style={{ fontSize: '0.85rem', background: '#fef2f2', padding: '10px 14px', borderRadius: '6px' }}>
-          ⚠️ You cannot proceed or sign in before verifying your university email.
+        <p className="error" style={{ fontSize: '0.85rem', background: 'var(--danger-bg)', padding: '10px 14px', borderRadius: '6px', border: '1px solid var(--danger)' }}>
+          You cannot proceed or sign in before verifying your university email.
         </p>
 
         {resendMsg && <p className="ok" style={{ marginTop: '14px' }}>{resendMsg}</p>}

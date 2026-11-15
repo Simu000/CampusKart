@@ -120,22 +120,16 @@ export default function ProfileMe() {
           {avatarPreview ? (
             <img src={avatarPreview} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           ) : (
-            '🎓'
+            <span style={{ fontSize: '1.4rem', fontWeight: 800, color: '#fff' }}>
+              {(user?.fullName || 'U').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+            </span>
           )}
         </div>
         <div>
           <h1 style={{ fontSize: '1.6rem', marginBottom: 4 }}>{user?.fullName}</h1>
           <p className="muted" style={{ fontSize: '0.9rem' }}>
-            {user?.email} · {user?.verified ? (
-              <span style={{ color: '#059669', fontWeight: 600 }}>✓ Verified Student</span>
-            ) : (
-              <span>
-                <span style={{ color: 'var(--danger)', fontWeight: 600 }}>⚠️ Unverified</span>
-                <Link to="/verify-email" style={{ color: 'var(--brand-600)', marginLeft: '8px', fontWeight: 600 }}>
-                  Verify Email →
-                </Link>
-              </span>
-            )}
+            {user?.email}
+            {user?.verified && <span style={{ color: 'var(--brand-600)', fontWeight: 600, marginLeft: 8 }}>· Verified Student</span>}
           </p>
         </div>
       </div>
